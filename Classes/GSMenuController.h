@@ -43,6 +43,7 @@
 @property (weak) IBOutlet NSMenuItem *processesSeparator;
 @property (weak) IBOutlet NSMenuItem *dependentProcesses;
 @property (weak) IBOutlet NSMenuItem *processList;
+@property (weak) IBOutlet NSMenuItem *killProcesses;
 
 @property BOOL menuIsOpen;
 
@@ -52,6 +53,7 @@
 - (IBAction)openAbout:(id)sender;
 - (IBAction)openPreferences:(id)sender;
 - (IBAction)openApplicationURL:(id)sender;
+- (IBAction)killDependentProcesses:(id)sender;
 - (IBAction)quit:(id)sender;
 
 - (IBAction)setMode:(id)sender;

@@ -48,6 +48,7 @@
 @synthesize processesSeparator;
 @synthesize dependentProcesses;
 @synthesize processList;
+@synthesize killProcesses;
 
 @synthesize menuIsOpen;
 
@@ -108,37 +109,37 @@
 - (void)updateMenu
 {
     GTMLoggerDebug(@"Updating status...");
-
+    
     BOOL isUsingIntegrated = [GSMux isUsingIntegratedGPU];
-
+    
     NSString *gpuString = (isUsingIntegrated ? [GSGPU integratedGPUName] : [GSGPU discreteGPUName]);
-
+    
     // Set menu bar icon (either with images or text, depending on the presence
     // of properly-named icon images in gfxCardStatus.app/Contents/Resources).
     if ([_prefs shouldUseImageIcons])
         [_statusItem setImage:[NSImage imageNamed:(isUsingIntegrated ? kImageIconIntegratedName : kImageIconDiscreteName)]];
     else
         [self _updateMenuBarIconText:isUsingIntegrated cardString:gpuString];
-
+    
     if (![GSGPU isLegacyMachine]) {
         BOOL dynamic = [GSMux isUsingDynamicSwitching];
         BOOL isOnIntegratedOnly = [GSMux isOnIntegratedOnlyMode];
-
+        
         GTMLoggerInfo(@"Using dynamic switching?: %d", dynamic);
         GTMLoggerInfo(@"Using old-style switching policy?: %d", [GSMux isUsingOldStyleSwitchPolicy]);
-
+        
         [integratedOnly setState:(isOnIntegratedOnly && !dynamic) ? NSOnState : NSOffState];
         [discreteOnly setState:(!isOnIntegratedOnly && !dynamic) ? NSOnState : NSOffState];
         [dynamicSwitching setState:dynamic ? NSOnState : NSOffState];
     }
-
+    
     [currentCard setTitle:[Str(@"Card") stringByReplacingOccurrencesOfString:@"%%" withString:gpuString]];
-
+    
     if (isUsingIntegrated)
         GTMLoggerInfo(@"%@ in use. Sweet deal! More battery life.", [GSGPU integratedGPUName]);
     else
         GTMLoggerInfo(@"%@ in use. Bummer! Less battery life for you.", [GSGPU discreteGPUName]);
-
+    
     if (!isUsingIntegrated)
         [self _updateProcessList];
 }
@@ -157,7 +158,7 @@
         _preferencesWindowController = [[PreferencesWindowController alloc] init];
         
         NSArray *modules = [NSArray arrayWithObjects:
-                            [[GeneralPreferencesViewController alloc] init], 
+                            [[GeneralPreferencesViewController alloc] init],
                             [[AdvancedPreferencesViewController alloc] init],
                             nil];
         
@@ -175,6 +176,15 @@
     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:kApplicationWebsiteURL]];
 }
 
+- (IBAction)killDependentProcesses:(id)sender
+{
+    NSArray *processes = [GSProcess getTaskList];
+    for (NSDictionary *process in processes) {
+        NSString *command = [@"kill " stringByAppendingString:[process objectForKey:kTaskItemPID]];
+        system([command UTF8String]);
+    }
+}
+
 - (IBAction)quit:(id)sender
 {
     [[NSApplication sharedApplication] terminate:self];
@@ -188,41 +198,41 @@
         [GSMux setMode:GSSwitcherModeToggleGPU];
         return;
     }
-
+    
     // Don't go any further if the user clicked on an already-selected item.
     if ([sender state] == NSOnState) return;
-
+    
     BOOL retval = NO;
-
+    
     if (sender == integratedOnly) {
         NSArray *taskList = [GSProcess getTaskList];
         if (taskList.count > 0) {
             GTMLoggerInfo(@"Not setting Integrated Only because of dependencies list items: %@", taskList);
-
+            
             NSMutableArray *taskNames = [[NSMutableArray alloc] init];
             for (NSDictionary *dict in taskList) {
                 NSString *taskName = [dict objectForKey:kTaskItemName];
                 [taskNames addObject:taskName];
             }
-
+            
             [GSNotifier showCantSwitchToIntegratedOnlyMessage:taskNames];
             return;
         }
-
+        
         GTMLoggerInfo(@"Setting Integrated Only...");
         retval = [GSMux setMode:GSSwitcherModeForceIntegrated];
     }
-
-    if (sender == discreteOnly) { 
+    
+    if (sender == discreteOnly) {
         GTMLoggerInfo(@"Setting Discrete Only...");
         retval = [GSMux setMode:GSSwitcherModeForceDiscrete];
     }
-
+    
     if (sender == dynamicSwitching) {
         GTMLoggerInfo(@"Setting Dynamic Switching...");
         retval = [GSMux setMode:GSSwitcherModeDynamicSwitching];
     }
-
+    
     // Only change status in case of GPU switch success.
     if (retval) {
         [integratedOnly setState:(sender == integratedOnly ? NSOnState : NSOffState)];
@@ -258,8 +268,8 @@
     [versionItem setTitle:[Str(@"About") stringByReplacingOccurrencesOfString:@"%%" withString:version]];
     [visitWebsiteItem setTitle:[Str(visitWebsiteItem.title) stringByReplacingOccurrencesOfString:@"%%" withString:kApplicationWebsiteURL]];
     NSArray *localized = [NSArray arrayWithObjects:updateItem, preferencesItem,
-                          quitItem, switchGPUs, integratedOnly, discreteOnly, 
-                          dynamicSwitching, dependentProcesses, processList, 
+                          quitItem, switchGPUs, integratedOnly, discreteOnly,
+                          dynamicSwitching, dependentProcesses, processList, killProcesses,
                           nil];
     for (NSButton *loc in localized)
         [loc setTitle:Str([loc title])];
@@ -273,12 +283,15 @@
     }
     
     BOOL isUsingIntegrated = [GSMux isUsingIntegratedGPU];
-
+    
     BOOL hide = isUsingIntegrated || [GSGPU isLegacyMachine];
     [processList setHidden:hide];
     [processesSeparator setHidden:hide];
     [dependentProcesses setHidden:hide];
-
+    [killProcesses setHidden:hide];
+    
+    NSLog(hide ? @"hide" : @"no hide");
+    
     // If we're using a 9400M/9600M GT model, or if we're on the integrated GPU,
     // no need to display/update the dependencies list.
     if (hide)
@@ -297,11 +310,11 @@
         if (![pid isEqualToString:@""])
             title = [title stringByAppendingFormat:@", PID: %@", pid];
         
-        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title 
-                                                      action:nil 
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title
+                                                      action:nil
                                                keyEquivalent:@""];
         [item setIndentationLevel:1];
-        [statusMenu insertItem:item 
+        [statusMenu insertItem:item
                        atIndex:([statusMenu indexOfItem:processList] + 1)];
     }
 }
@@ -316,21 +329,21 @@
     } else {
         firstLetter = [cardString characterAtIndex:0];
     }
-
+    
     NSString *letter = [[NSString stringWithFormat:@"%C", firstLetter] lowercaseString];
     int fontSize = ([letter isEqualToString:@"n"] || [letter isEqualToString:@"a"] ? 19 : 18);
-
+    
     // Set our font style.
     NSFontManager *fontManager = [NSFontManager sharedFontManager];
     NSFont *boldItalic = [fontManager fontWithFamily:@"Georgia"
                                               traits:NSBoldFontMask|NSItalicFontMask
                                               weight:0
                                                 size:fontSize];
-
+    
     NSDictionary *attributes = [[NSDictionary alloc] initWithObjectsAndKeys:
-                                boldItalic, NSFontAttributeName, 
+                                boldItalic, NSFontAttributeName,
                                 [NSNumber numberWithDouble:2.0], NSBaselineOffsetAttributeName, nil];
-    NSAttributedString *title = [[NSAttributedString alloc] 
+    NSAttributedString *title = [[NSAttributedString alloc]
                                  initWithString:letter
                                  attributes:attributes];
     
